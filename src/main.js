@@ -342,7 +342,7 @@ SCENES.broadcast = (() => {
       bgMat.uniforms.uGlowZ.value = -zc * 0.333 + L * 2.2;
       bgMat.uniforms.uPal.value = 0.03 + smooth(9, 13, L) * 0.35;
       const tele = ki % 5 === 0 && ki > 0 && onKickFrame(t);
-      fx.glitch = tele ? 1 : k * 0.25; fx.neg = tele ? 1 : 0;
+      fx.glitch = tele ? 1 : 0; fx.neg = tele ? 1 : 0;
       Object.assign(fx, { decay: 0.7, zoom: 0.985, rot: 0.004, hue: 0.0, warp: 0.002 + b * 0.004,
         palMode: L > dur - 2.2 ? 1 : 5, palMix: 0.55 + smooth(dur - 3, dur, L) * 0.3, palShift: t * 0.15,
         kaleido: L > dur - 2.2 ? 6 : 0, flashWhite: L < 0.07 ? 1 : 0 });
@@ -375,7 +375,7 @@ SCENES.coven = (() => {
         ring.rotation.y = 0;
         coven.forEach(w => { w.group.position.y = 0; w.headG.rotation.x = 0.35; setEyes(w, 0.2); raiseArms(w, 0); });
         pitMat.uniforms.uOn.value = 0; pitMat.uniforms.uLid.value = 0;
-        Object.assign(fx, { palMode: 3, palMix: 1, static: 0.15, decay: 0.3, roll: 0.4 });
+        Object.assign(fx, { palMode: 3, palMix: 1, decay: 0.3 });
         return fx;
       }
       const L = lt - D, dur = sec.dur - D;
@@ -391,11 +391,11 @@ SCENES.coven = (() => {
       });
       pitMat.uniforms.uOn.value = smooth(0, 0.2, L); pitMat.uniforms.uLid.value = smooth(0.4, 1.6, L);
       G.uOrbColor.value.setRGB(1, .2 + .5 * e, .3 + .3 * Math.sin(t)); G.uOrbPos.value.set(0, 1.2, 0);
-      const kal = Math.floor(kickIndex(t) / 8) % 2 === 1;
+      const kal = false;
       Object.assign(fx, { kaleido: kal ? 4 + 2 * (Math.floor(kickIndex(t) / 16) % 2) : 0,
         decay: 0.62, zoom: 1.0, rot: 0.012 + b * 0.01, hue: 0.0, warp: 0.002,
         palMode: kal ? 1 : 5, palMix: kal ? 0.35 : 0.6, palShift: t * 0.2,
-        glitch: k * 0.3 + (L < 0.15 ? 1 : 0), neg: L < 0.07 ? 1 : 0, fade: smooth(dur - 0.3, dur, L) });
+        glitch: L < 0.15 ? 1 : 0, neg: L < 0.07 ? 1 : 0, fade: smooth(dur - 0.3, dur, L) });
       return fx;
     } };
 })();
@@ -453,9 +453,9 @@ SCENES.forest = (() => {
       bgMat.uniforms.uLid.value = smooth(D, D + 0.6, lt) * (hash(Math.floor(t * 0.7)) > .85 ? 0 : 1);
       { const hp = new THREE.Vector3(); giant.headG.getWorldPosition(hp); hp.y += 7; const md = hp.sub(camera.position).normalize(); if (rise < 0.5) md.set(0.35, 0.55, -1).normalize(); bgMat.uniforms.uMoonDir.value.lerp(md, 1); }
       bgMat.uniforms.uPal.value = 0.1;
-      if (lt < D) Object.assign(fx, { palMode: 4, palMix: 0.6, decay: 0.4, static: 0.06 });
+      if (lt < D) Object.assign(fx, { palMode: 4, palMix: 0.6, decay: 0.4 });
       else Object.assign(fx, { palMode: k > 0.55 ? 2 : 5, palMix: k > 0.55 ? 0.6 : 0.55 + b * 0.2, palShift: t * 0.1, decay: 0.55, zoom: 1 - k * 0.02, warp: 0.003 + b * 0.006 });
-      fx.glitch = (lt > D && lt < D + 0.12 ? 1 : 0) + k * 0.2; fx.neg = lt > D && lt < D + 0.07 ? 1 : 0;
+      fx.glitch = lt > D && lt < D + 0.12 ? 1 : 0; fx.neg = lt > D && lt < D + 0.07 ? 1 : 0;
       fx.flashWhite = smooth(dur - 0.5, dur - 0.05, lt);
       return fx;
     } };
@@ -490,7 +490,7 @@ SCENES.vortex = (() => {
         Object.assign(fx, { decay: 0.68, zoom: 0.97 - k * 0.02, rot: -0.01, hue: 0.0, warp: 0.002 + b * .005,
           palMode: kal4 ? 1 : 5, palMix: 0.5, palShift: t * 0.3,
           kaleido: (Math.floor(kickIndex(t) / 8) % 3 === 2) ? 8 : 0,
-          glitch: k * 0.3 + (lt > out - 0.2 ? 1 : 0), neg: onKickFrame(t) && kickIndex(t) % 4 === 0 ? 1 : 0 });
+          glitch: lt > out - 0.2 ? 1 : 0, neg: onKickFrame(t) && kickIndex(t) % 4 === 0 ? 1 : 0 });
         return fx;
       }
       // the beat is gone. the static comes back, and he is right in front of you (= loops into the start)
@@ -579,7 +579,7 @@ const post = new THREE.ShaderMaterial({
     float roll = fract(uTime * .37);
     float band = smoothstep(.06, 0., abs(vUv.y - roll)) * uRoll;
     uv.x += band * (h(vec2(row, fr + 3.)) - .5) * .08;
-    float ca = (1. + uGlitch * 5. + uKick * 3.) / uRes.x;
+    float ca = (uGlitch * 5.) / uRes.x;   // chroma split only during glitch events
     vec3 c = vec3(texture2D(tFeed, uv + vec2(ca, 0.)).r, texture2D(tFeed, uv).g, texture2D(tFeed, uv - vec2(ca, 0.)).b);
     float l = dot(c, vec3(.3, .5, .2));
     c = mix(c, palette(l, uPalMode), uPalMix);
@@ -589,9 +589,6 @@ const post = new THREE.ShaderMaterial({
     st *= .8 + .2 * sin(px.y * .7 + uTime * 40.);
     c = mix(c, vec3(st) + band * .3, uStatic);
     c = mix(c, 1. - c, uNeg);
-    c += vec3(h(px + fr) - .5) * .06;
-    vec2 q = vUv - .5; c *= 1. - dot(q, q) * 1.3;
-    c *= .84 + .16 * mod(px.y, 2.);
     c = mix(c, vec3(1.), uWhite); c *= 1. - uFade;
     c = floor(clamp(c, 0., 1.) * 31. + bayer(px) + .5) / 31.;
     gl_FragColor = vec4(c, 1.);
