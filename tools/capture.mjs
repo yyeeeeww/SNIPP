@@ -31,14 +31,18 @@ const grab = async (t) => {
 
 if (mode === 'stills') {
   fs.mkdirSync(out, { recursive: true });
-  for (const t of rest.map(Number)) fs.writeFileSync(path.join(out, `t${String(t).padStart(5, '0')}.png`), await grab(t));
+  const { fps } = await page.evaluate(() => window.SNIPPET);
+  for (const t of rest.map(Number)) {   // warm up the feedback buffer with the preceding second
+    await page.evaluate(({ t, fps }) => { window.renderAt(0); for (let x = Math.max(0, t - 1); x < t - 1e-6; x += 1 / fps) window.renderAt(x); }, { t, fps });
+    fs.writeFileSync(path.join(out, `t${t.toFixed(2).padStart(6, '0')}.png`), await grab(t));
+  }
 } else {
   const { total, fps } = await page.evaluate(() => window.SNIPPET);
   const scale = +(rest[0] || 4), audio = rest[1];
   const args = ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-'];
   if (audio) args.push('-i', audio);
-  args.push('-vf', `scale=iw*${scale}:ih*${scale}:flags=neighbor,format=yuv420p`, '-c:v', 'libx264', '-crf', '16', '-preset', 'medium');
-  if (audio) args.push('-c:a', 'aac', '-b:a', '256k', '-shortest');
+  args.push('-vf', `scale=iw*${scale}:ih*${scale}:flags=neighbor,format=yuv420p`, '-c:v', 'libx264', '-profile:v', 'high', '-crf', '17', '-maxrate', '28M', '-bufsize', '40M', '-preset', 'medium', '-r', String(fps), '-movflags', '+faststart');
+  if (audio) args.push('-c:a', 'aac', '-b:a', '320k', '-ar', '48000');
   args.push(out);
   const ff = spawn('ffmpeg', args, { stdio: ['pipe', 'ignore', 'inherit'] });
   const n = Math.round(total * fps);
