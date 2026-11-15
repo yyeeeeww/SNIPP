@@ -43,7 +43,7 @@ const SKY = {
   navy: (() => { const t = canvasTex(1024, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#04062e'); gr.addColorStop(.47, '#141c70'); gr.addColorStop(.52, '#1a2276'); gr.addColorStop(1, '#020310'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }); t.mapping = THREE.EquirectangularReflectionMapping; return t; })(),
   stars: (() => { const R = rng(3); const t = canvasTex(2048, 1024, (g, w, h) => { const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#000004'); bg.addColorStop(.48, '#05061a'); bg.addColorStop(1, '#000'); g.fillStyle = bg; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 5000; i++) { const b = R(); g.fillStyle = `rgba(255,240,240,${.3 + b * .7})`; g.fillRect(R() * w, Math.pow(R(), 1.3) * h * .5, b > .93 ? 3 : 2, b > .93 ? 3 : 2); } }); t.mapping = THREE.EquirectangularReflectionMapping; return t; })(),
-  flesh: new THREE.Color(0x120203),
+  flesh: (() => { const t = new THREE.DataTexture(new Uint8Array([28, 4, 6, 255]), 1, 1); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; })(),
 };
 
 // ---------------- roses ----------------
@@ -351,12 +351,34 @@ function zoneAt(p) {
   return 'hub';
 }
 let curZone = null;
-function applyZone(z) {
+// sky dome that crossfades between two panoramas, and fog/light that blend over a couple of seconds
+const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+  uniforms: { tA: { value: SKY.day }, tB: { value: SKY.day }, uMix: { value: 1 } },
+  vertexShader: `varying vec3 vD; void main(){ vD = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.); gl_Position = p.xyww; }`,
+  fragmentShader: `uniform sampler2D tA, tB; uniform float uMix; varying vec3 vD;
+    void main(){ vec3 d = normalize(vD); vec2 uv = vec2(atan(d.z, d.x) / 6.2831853 + .5, asin(clamp(d.y, -1., 1.)) / 3.14159265 + .5);
+      gl_FragColor = mix(texture2D(tA, uv), texture2D(tB, uv), uMix);
+      #include <colorspace_fragment>
+    }` });
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), skyMat); skyDome.frustumCulled = false; skyDome.renderOrder = -1; scene.add(skyDome);
+scene.fog = new THREE.Fog(0xc8d4ec, 80, 420);
+const blend = { k: 1, from: null, to: null };
+const snap = () => ({ fog: scene.fog.color.clone(), near: scene.fog.near, far: scene.fog.far, hc: hemi.color.clone(), hg: hemi.groundColor.clone(), hi: hemi.intensity, sc: sun.color.clone(), si: sun.intensity });
+function applyZone(z, instant = false) {
   const Z = ZONES[z]; curZone = z;
-  scene.background = Z.sky; scene.fog = new THREE.Fog(...Z.fog);
-  hemi.color.set(Z.hemi[0]); hemi.groundColor.set(Z.hemi[1]); hemi.intensity = Z.hemi[2];
-  sun.color.set(Z.sun[0]); sun.intensity = Z.sun[1];
+  skyMat.uniforms.tA.value = skyMat.uniforms.uMix.value > 0.5 ? skyMat.uniforms.tB.value : skyMat.uniforms.tA.value;
+  skyMat.uniforms.tB.value = Z.sky; skyMat.uniforms.uMix.value = instant ? 1 : 0;
+  blend.from = snap(); blend.to = { fog: new THREE.Color(Z.fog[0]), near: Z.fog[1], far: Z.fog[2], hc: new THREE.Color(Z.hemi[0]), hg: new THREE.Color(Z.hemi[1]), hi: Z.hemi[2], sc: new THREE.Color(Z.sun[0]), si: Z.sun[1] };
+  blend.k = instant ? 1 : 0; updateBlend(0, true);
   music.play(Z.seg);
+}
+function updateBlend(dt, force) {
+  if (blend.k >= 1 && !force) return;
+  blend.k = Math.min(1, blend.k + dt / 2.5); const k = ease(blend.k), A = blend.from, B = blend.to;
+  skyMat.uniforms.uMix.value = Math.max(skyMat.uniforms.uMix.value, k);
+  scene.fog.color.lerpColors(A.fog, B.fog, k); scene.fog.near = lerp(A.near, B.near, k); scene.fog.far = lerp(A.far, B.far, k);
+  hemi.color.lerpColors(A.hc, B.hc, k); hemi.groundColor.lerpColors(A.hg, B.hg, k); hemi.intensity = lerp(A.hi, B.hi, k);
+  sun.color.lerpColors(A.sc, B.sc, k); sun.intensity = lerp(A.si, B.si, k);
 }
 
 // ---------------- music: loops of the four hooks from the snippet mix (if present) ----------------
@@ -426,7 +448,7 @@ const ZONE_LINES = {
   clock: 'часы спешат. земля под ногами шевелится.',
   temple: 'здесь всё живое. на полу лежит точка.',
 };
-function fadeTo(fn) { if (state.fading) return; state.fading = true; $('fade').style.opacity = 1; setTimeout(() => { fn(); $('fade').style.opacity = 0; setTimeout(() => state.fading = false, 450); }, 480); }
+function fadeTo(fn) { if (state.fading) return; state.fading = true; $('fade').style.opacity = 1; setTimeout(() => { fn(); const z = zoneAt(state.pos); if (z !== curZone) applyZone(z, true); $('fade').style.opacity = 0; setTimeout(() => state.fading = false, 900); }, 950); }
 function nearestTarget() {
   if (state.got >= 4) return V3(0, 0, 0);
   let best = null, bd = 1e9; for (const L of LET) { if (L.got) continue; const tgt = L.zone === 'temple' ? (state.inTemple ? L.pos : CASTLE_GATE) : L.pos; const d = tgt.distanceTo(state.pos); if (d < bd) { bd = d; best = tgt; } }
@@ -516,12 +538,12 @@ function frame() {
   // navigation arrow
   const tgt = nearestTarget();
   if (tgt) { const ang = Math.atan2(tgt.x - state.pos.x, tgt.z - state.pos.z) - Math.atan2(-Math.sin(state.yaw), -Math.cos(state.yaw)); $('arrow').style.transform = `rotate(${-ang}rad)`; $('arrow').style.opacity = state.ending ? 0 : 1; }
-  updateDialog(dt);
+  updateDialog(dt); updateBlend(dt); skyDome.position.copy(camera.position);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 
-applyZone('hub');
+applyZone('hub', true);
 $('loading').remove();
 $('start').addEventListener('click', async () => {
   $('start').style.display = 'none'; state.started = true;
