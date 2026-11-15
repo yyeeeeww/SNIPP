@@ -25,7 +25,8 @@ page.on('pageerror', e => console.log('[pageerror]', e.message));
 await page.goto(`http://localhost:${port}/${process.env.PAGE || 'index.html'}?capture`);
 await page.waitForFunction(() => window.READY, null, { timeout: 60000 });
 const grab = async (t) => {
-  const url = await page.evaluate((t) => { window.renderAt(t); return document.querySelector('canvas').toDataURL('image/png'); }, t);
+  const q = process.env.JPEGQ ? +process.env.JPEGQ : 0;
+  const url = await page.evaluate(({ t, q }) => { window.renderAt(t); const c = document.querySelector('canvas'); return q ? c.toDataURL('image/jpeg', q) : c.toDataURL('image/png'); }, { t, q });
   return Buffer.from(url.split(',')[1], 'base64');
 };
 

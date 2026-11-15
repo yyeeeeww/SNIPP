@@ -4,9 +4,10 @@ import * as THREE from 'three';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 
 const params = new URLSearchParams(location.search);
-const W = +(params.get('w') || 720), H = +(params.get('h') || 1280);
+const W = +(params.get('w') || 405), H = +(params.get('h') || 720);
 const CAPTURE = params.has('capture');
 const XF = 0.8;
 
@@ -39,7 +40,7 @@ renderer.toneMapping = THREE.NoToneMapping;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.autoClear = false;
 document.body.appendChild(renderer.domElement);
-const mkRT = () => new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: 4 });
+const mkRT = () => new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: 0 });
 const rtA = mkRT(), rtB = mkRT();
 
 // ---------------- assets ----------------
@@ -51,7 +52,7 @@ async function load(name) {
 }
 async function tex(name, rx = 1, ry = rx) {
   const t = (await load(name)).clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry);
-  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true; return t;
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 1; t.needsUpdate = true; return t;
 }
 async function sky(name) { const t = (await load(name)).clone(); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; }
 function canvasTex(w, h, draw, srgb = true) {
@@ -175,9 +176,10 @@ const ROSE_GEO = roseGeometry(true), ROSE_HEAD = roseGeometry(false);
 const ROSE_MAT = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide, shininess: 55, specular: 0x886666 });
 function roses(n, place, geo = ROSE_GEO, sizeR = [0.8, 1.4]) {
   const im = new THREE.InstancedMesh(geo, ROSE_MAT, n); im.castShadow = true;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), base = [], times = [];
   for (let i = 0; i < n; i++) { const p = place(i); const s = lerp(sizeR[0], sizeR[1], p.r ?? Math.random()) * (p.s ?? 1);
-    q.setFromEuler(e.set(p.rx ?? 0, p.ry ?? 0, p.rz ?? 0)); m.compose(p.v, q, V3(s, s, s)); im.setMatrixAt(i, m); }
+    q.setFromEuler(e.set(p.rx ?? 0, p.ry ?? 0, p.rz ?? 0)); m.compose(p.v, q, V3(s, s, s)); im.setMatrixAt(i, m); base.push(m.clone()); times.push(Math.random()); }
+  im.userData.grow = { base, times, pivot: geo === ROSE_GEO ? -0.6 : 0 };
   return im;
 }
 function roseField(n, r, area, avoid, yBase = 0.45) {
@@ -185,6 +187,36 @@ function roseField(n, r, area, avoid, yBase = 0.45) {
   return roses(n, () => { const c = centers[Math.floor(r() * centers.length)]; let x = c[0] + (r() - .5) * 2.6, z = c[1] + (r() - .5) * 2.6;
     if (avoid && avoid(x, z)) x += 4; const tall = 0.35 + r() * 0.25;
     return { v: V3(x, yBase * tall / 0.45 + r() * 0.1, z), ry: r() * 6, rx: (r() - .5) * 0.5, rz: (r() - .5) * 0.5, r: r() }; }, ROSE_GEO, [0.9, 1.6]);
+}
+
+// roses sprouting out of any surface of an object (walls, towers, hands, heads...)
+function growRoses(target, n, seed, sizeR = [1, 1.6], reject = null) {
+  target.updateMatrixWorld(true);
+  const inv = target.matrixWorld.clone().invert(), r = rng(seed), items = [];
+  target.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.geometry.attributes.normal) {
+    const bb = new THREE.Box3().setFromObject(o), sz = bb.getSize(new THREE.Vector3());
+    items.push({ smp: new MeshSurfaceSampler(o).build(), rel: inv.clone().multiply(o.matrixWorld), area: sz.x * sz.y + sz.y * sz.z + sz.x * sz.z + 1e-3 }); } });
+  const total = items.reduce((a, b) => a + b.area, 0);
+  const im = new THREE.InstancedMesh(ROSE_HEAD, ROSE_MAT, n); im.castShadow = true;
+  const base = [], times = [], p = new THREE.Vector3(), nr = new THREE.Vector3(), up = V3(0, 1, 0), q = new THREE.Quaternion(), tw = new THREE.Quaternion(), m = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) {
+    let x = r() * total, it = items[0]; for (const c of items) { x -= c.area; if (x <= 0) { it = c; break; } }
+    for (let tries = 0; tries < 20; tries++) { it.smp.sample(p, nr); p.applyMatrix4(it.rel); nr.transformDirection(it.rel); if (!reject || !reject(p)) break; }
+    q.setFromUnitVectors(up, nr).multiply(tw.setFromAxisAngle(up, r() * 6.283));
+    const sc = lerp(sizeR[0], sizeR[1], r()); m.compose(p.clone().addScaledVector(nr, 0.03), q, V3(sc, sc, sc));
+    base.push(m.clone()); times.push(r()); im.setMatrixAt(i, m);
+  }
+  im.userData.grow = { base, times, pivot: 0 }; target.add(im); return im;
+}
+const _gm = new THREE.Matrix4(), _gs = new THREE.Matrix4(), _gt = new THREE.Matrix4(), _gt2 = new THREE.Matrix4();
+function growUpdate(im, lt, start, spread, dur = 0.9) {
+  const { base, times, pivot } = im.userData.grow;
+  for (let i = 0; i < base.length; i++) {
+    const t0 = start + times[i] * spread, k = Math.max(1e-4, ease(smooth(t0, t0 + dur, lt)));
+    _gm.copy(base[i]).multiply(_gt.makeTranslation(0, pivot, 0)).multiply(_gs.makeScale(k, k, k)).multiply(_gt2.makeTranslation(0, -pivot, 0));
+    im.setMatrixAt(i, _gm);
+  }
+  im.instanceMatrix.needsUpdate = true;
 }
 
 // ---------------- shared builders ----------------
@@ -220,7 +252,7 @@ function roseBorder(stage) {    // like the skull border, but roses
 }
 function ovCanvas(draw) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); draw(g); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
 const JP = 'ファブドットコム', RM = '４ＲＭ';
-function redText(g, str, x, y, px, align = 'left') { g.font = `bold ${px}px "WenQuanYi Zen Hei", sans-serif`; g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = '#ff1414'; g.fillText(str, x, y); }
+function redText(g, str, x, y, px, align = 'left') { const k = W / 720; x *= k; y *= k; px = Math.round(px * k); g.font = `bold ${px}px "WenQuanYi Zen Hei", sans-serif`; g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = '#ff1414'; g.fillText(str, x, y); }
 
 function dollHead(env) {
   const g = new THREE.Group();
@@ -308,8 +340,9 @@ SCENES.kingdom = await (async () => {
   const fm = flameMats(5); const fires = [];
   roofTops.forEach((p, i) => { if (i % 2 === 0 || i === 0) for (let k = 0; k < 3; k++) { const f = flame(fm, 3 + r() * 2.5); f.position.copy(p).add(V3((r() - .5) * 2, r() * 2, (r() - .5) * 2)); s.add(f); fires.push([f, f.scale.x]); } });
   // roses out of the concrete
-  s.add(roseField(900, r, [-30, 30, -70, 14], (x) => Math.abs(x) < 3.8));
-  s.add(roses(140, () => ({ v: V3((r() < .5 ? -1 : 1) * (3.9 + r() * 2.5), 0.35 + r() * 0.15, 6 - r() * 16), ry: r() * 6, rx: (r() - .5) * .5, rz: (r() - .5) * .5, r: r() }), ROSE_GEO, [1.1, 1.9]));
+  const fieldR = roseField(900, r, [-30, 30, -70, 14], (x) => Math.abs(x) < 3.8); s.add(fieldR);
+  const castleR = growRoses(castle, 560, 101, [2.6, 4.4]);
+  const sideR = roses(140, () => ({ v: V3((r() < .5 ? -1 : 1) * (3.9 + r() * 2.5), 0.35 + r() * 0.15, 6 - r() * 16), ry: r() * 6, rx: (r() - .5) * .5, rz: (r() - .5) * .5, r: r() }), ROSE_GEO, [1.1, 1.9]); s.add(sideR);
   // title
   const T = titleStage(sk); const fav = wordArt('FAVDOTCOM', 0.36, { env: sk }); fav.position.set(0, 1.95, 0); T.s.add(fav);
   const border = roseBorder(T);
@@ -323,6 +356,7 @@ SCENES.kingdom = await (async () => {
       fires.forEach(([f, s0], i) => { const fl = 0.85 + 0.15 * Math.sin(t * 9 + i * 1.7) + e * 0.2; f.scale.set(s0 * ign * fl, s0 * 2 * ign * fl, 1); });
       fav.rotation.y = Math.sin(lt * 0.5) * 0.25; fav.rotation.x = Math.sin(lt * 0.37) * 0.08;
       border.visible = lt > D;
+      growUpdate(fieldR, lt, -0.6, 6); growUpdate(sideR, lt, -0.3, 4); growUpdate(castleR, lt, D + 0.3, 9);
       return { title: smooth(D, D + 1.2, lt), ov: 0 };
     } };
 })();
@@ -341,20 +375,21 @@ SCENES.eyehouse = await (async () => {
   // house
   const house = new THREE.Group(); house.position.y = 0.25; s.add(house);
   const skin = new THREE.MeshPhongMaterial({ color: 0xe89890, shininess: 30, specular: 0x553333 });
-  const front = new THREE.MeshPhongMaterial({ map: MOUTH[0], shininess: 40, specular: 0x553333 });
+  const MA = await tex('mouth_a.jpg'), MB = await tex('mouth_b.jpg');
+  const front = new THREE.MeshPhongMaterial({ map: MA, shininess: 40, specular: 0x553333 });
   const box = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 3.2), [skin, skin, skin, skin, front, skin]); box.position.y = 1.2; box.castShadow = box.receiveShadow = true; house.add(box);
   const roofShape = new THREE.Shape(); roofShape.moveTo(-2, 0); roofShape.lineTo(0, 1.7); roofShape.lineTo(2, 0); roofShape.lineTo(-2, 0);
   const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 3.8, bevelEnabled: false }); roofGeo.translate(0, 0, -1.9);
   // map the eye across both roof planes
   { const p = roofGeo.attributes.position, uv = roofGeo.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getZ(i) + 1.9) / 3.8, Math.abs(p.getX(i)) < 1e-3 ? 1 : 1 - Math.abs(p.getX(i)) / 2); }
-  const roofEye = new THREE.MeshPhongMaterial({ map: EYE, shininess: 50, specular: 0x664444 });
+  const roofEye = new THREE.MeshPhongMaterial({ map: await tex('eye_photo.jpg'), shininess: 50, specular: 0x664444 });
   const roof = new THREE.Mesh(roofGeo, [skin, roofEye]); roof.position.y = 2.4; roof.rotation.y = Math.PI / 2; roof.castShadow = true; house.add(roof);
   // mouth door in a rock wall
   const wall = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(5, 7, 2.2), 1.5, 2), new THREE.MeshPhongMaterial({ map: await tex('rock_grey.jpg', 1), color: 0xd8d4cc, shininess: 6 }));
   wall.position.set(-7.5, 3.5, -6); wall.rotation.y = 0.45; wall.castShadow = wall.receiveShadow = true; s.add(wall);
   const frameM = new THREE.MeshPhongMaterial({ color: 0xe0d0c0 });
   const fr = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.0, 0.2), frameM); fr.position.set(0, -1.9, 1.12); wall.add(fr);
-  const doorMat = new THREE.MeshPhongMaterial({ map: MOUTH[1], shininess: 40 });
+  const doorMat = new THREE.MeshPhongMaterial({ map: MB, shininess: 40 });
   const door = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.7), doorMat); door.position.set(0, -1.9, 1.23); wall.add(door);
   // trees, bushes, rocks
   const treeM = new THREE.MeshPhongMaterial({ map: TREE, alphaTest: 0.5, side: THREE.DoubleSide, shininess: 0 });
@@ -364,17 +399,18 @@ SCENES.eyehouse = await (async () => {
   const rockM = new THREE.MeshPhongMaterial({ map: await tex('rock_grey.jpg', 1), color: 0x9a948c, shininess: 8 });
   for (let i = 0; i < 12; i++) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + r() * 1.2, 0), rockM); const a = r() * 6.283, d = 7 + r() * 18; m.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d); m.rotation.set(r(), r(), r()); m.castShadow = true; s.add(m); }
   // roses on the concrete slab around the house
-  s.add(roses(220, () => { let x = (r() - .5) * 8.4, z = (r() - .5) * 8.4; if (Math.abs(x) < 2.1 && Math.abs(z) < 2.1) x = Math.sign(x || 1) * (2.2 + r() * 2); return { v: V3(x, 0.62 + r() * 0.08, z), ry: r() * 6, rx: (r() - .5) * .4, rz: (r() - .5) * .4, r: r() }; }, ROSE_GEO, [1.0, 1.6]));
+  const slabR = roses(220, () => { let x = (r() - .5) * 8.4, z = (r() - .5) * 8.4; if (Math.abs(x) < 2.1 && Math.abs(z) < 2.1) x = Math.sign(x || 1) * (2.2 + r() * 2); return { v: V3(x, 0.62 + r() * 0.08, z), ry: r() * 6, rx: (r() - .5) * .4, rz: (r() - .5) * .4, r: r() }; }, ROSE_GEO, [1.0, 1.6]); s.add(slabR);
+  const houseR = growRoses(house, 140, 202, [0.9, 1.5], (p) => p.y > 2.35 || (p.z > 1.55 && Math.abs(p.x) < 1.2 && p.y > 0.5 && p.y < 2.0)), wallR = growRoses(wall, 120, 203, [1.0, 1.7]);
   const T = titleStage(sk);
-  const ov = ovCanvas(g => { redText(g, JP, 34, 40, 64); redText(g, RM, W - 34, H - 150, 96, 'right'); });
+  const ov = ovCanvas(g => { redText(g, JP, 34, 40, 64); redText(g, RM, 720 - 34, 1280 - 150, 96, 'right'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const p = clamp(lt / (sec.dur + XF));
       const a = lerp(-0.9, 1.1, ease(p)), rad = lerp(13, 8.5, ease(p));
       cam.position.set(Math.sin(a) * rad, lerp(4.5, 2.2, ease(p)), Math.cos(a) * rad);
       cam.lookAt(1.2, 1.9, -1.2);
-      front.map = MOUTH[k > 0.25 && lt > D ? 1 : 0];
-      doorMat.map = MOUTH[k > 0.25 ? 0 : 1];
+      front.map = k > 0.3 && lt > D ? MB : MA; doorMat.map = k > 0.3 ? MA : MB;
+      growUpdate(slabR, lt, -0.6, 5); growUpdate(houseR, lt, D, 9); growUpdate(wallR, lt, D + 1, 9);
       return { title: 0, ov: smooth(D, D + 1.0, lt) };
     } };
 })();
@@ -399,10 +435,11 @@ SCENES.clocktown = await (async () => {
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 8), dripM); b.position.set(x, y - len, z); parent.add(b); }
     const top = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.4, 0.3), dripM); top.position.set(0, y + 0.05, z); parent.add(top); }
   const blds = [[-12, -14, 6, 14], [-14, -26, 7, 20], [9, -16, 6, 12], [13, -28, 8, 22], [-6, -40, 7, 16], [4, -44, 6, 26], [18, -6, 5, 9], [-19, -4, 5, 10]];
-  blds.forEach(([x, z, w, h], i) => { const b = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(w, h, w), w / 4, h / 8), bM); b.position.set(x, h / 2, z); b.castShadow = b.receiveShadow = true; s.add(b);
+  const town = new THREE.Group(); s.add(town);
+  blds.forEach(([x, z, w, h], i) => { const b = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(w, h, w), w / 4, h / 8), bM); b.position.set(x, h / 2, z); b.castShadow = b.receiveShadow = true; town.add(b);
     if (i % 3 !== 1) drips(b, w * 0.7, h / 2 - 1.5 - r() * 3, w / 2 + 0.16, 4 + Math.floor(r() * 4)); });
   // clock tower
-  const towerG = new THREE.Group(); towerG.position.set(-1, 0, -20); s.add(towerG);
+  const towerG = new THREE.Group(); towerG.position.set(-1, 0, -20); town.add(towerG);
   const shaft = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(3.4, 14, 3.4), 1, 3), bM); shaft.position.y = 7; towerG.add(shaft);
   const head = new THREE.Mesh(new THREE.BoxGeometry(4.6, 4.6, 4.6), new THREE.MeshPhongMaterial({ color: 0xf0eeea, shininess: 20 })); head.position.y = 16.3; towerG.add(head);
   const roofT = new THREE.Mesh(new THREE.ConeGeometry(3.6, 4, 4), new THREE.MeshPhongMaterial({ color: 0x2a2a30, shininess: 60 })); roofT.position.y = 20.6; roofT.rotation.y = Math.PI / 4; towerG.add(roofT);
@@ -418,9 +455,11 @@ SCENES.clocktown = await (async () => {
   const hands = []; const hr = rng(4);
   for (let i = 0; i < 16; i++) { const h = hand(); const row = Math.floor(i / 4); h.position.set((i % 4 - 1.5) * 2.4 + (hr() - .5) * 1.2 + 1, -3.4, 2 - row * 3.2 - hr()); h.rotation.y = (hr() - .5) * 0.8; h.scale.setScalar(0.9 + hr() * 0.6); s.add(h); hands.push({ h, ph: hr() * 6, delay: hr() }); }
   hands.sort((a, b) => a.delay - b.delay);
-  s.add(roseField(260, r, [-6, 8, -9, 7], null));
+  const fieldR = roseField(260, r, [-6, 8, -9, 7], null); s.add(fieldR);
+  const townR = growRoses(town, 700, 303, [2.0, 3.4]);
+  hands.forEach((o, i) => { o.h.position.y = 0; o.roses = growRoses(o.h, 10, 310 + i, [0.8, 1.3]); o.h.position.y = -3.4; });
   const T = titleStage(STARS); const rm = wordArt('4RM', 0.9, { env: STARS, color: 0xd0d4e0, side: 0x200008, reflect: 0.3 }); rm.position.set(0, 1.7, 0); T.s.add(rm);
-  const ov = ovCanvas(g => { redText(g, JP, W / 2, H - 140, 58, 'center'); });
+  const ov = ovCanvas(g => { redText(g, JP, 360, 1280 - 140, 58, 'center'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const p = clamp(lt / (sec.dur + XF));
@@ -429,7 +468,8 @@ SCENES.clocktown = await (async () => {
       const sp = t * 0.6 + Math.max(0, lt - D) * 2.5;
       handsCl.forEach(([hh, mh]) => { hh.rotation.z = -sp * 0.4; mh.rotation.z = -sp * 4; });
       hands.forEach((o, i) => { const st = D + 0.25 + i * 0.42; const up = ease(smooth(st, st + 1.3, lt));
-        o.h.position.y = lerp(-3.4, -0.2, up); o.h.rotation.z = Math.sin(t * 0.8 + o.ph) * 0.06 * up; });
+        o.h.position.y = lerp(-3.4, -0.2, up); o.h.rotation.z = Math.sin(t * 0.8 + o.ph) * 0.06 * up; growUpdate(o.roses, lt, st + 0.7, 1.6); });
+      growUpdate(fieldR, lt, -0.6, 6); growUpdate(townR, lt, D, 10);
       lamp.intensity = 50 + envSmooth(t) * 40;
       rm.rotation.y = Math.sin(lt * 0.6) * 0.35;
       return { title: smooth(D + 0.5, D + 1.7, lt), ov: smooth(D + 1, D + 2, lt) };
@@ -449,9 +489,10 @@ SCENES.pool = await (async () => {
     const m = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(w, 0.4, d), w / 16, d / 16), deckM); m.position.set(x, -0.2, z); m.receiveShadow = true; s.add(m); }
   const tileT = TILES.clone(); tileT.needsUpdate = true; tileT.repeat.set(1, 1);
   const tileM = new THREE.MeshPhongMaterial({ map: tileT, shininess: 80, specular: 0x557766 });
-  const floor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(PW, PL), PW / 2, PL / 2), tileM); floor.rotation.x = -Math.PI / 2; floor.position.y = -PD; floor.receiveShadow = true; s.add(floor);
+  const poolG = new THREE.Group(); s.add(poolG);
+  const floor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(PW, PL), PW / 2, PL / 2), tileM); floor.rotation.x = -Math.PI / 2; floor.position.y = -PD; floor.receiveShadow = true; poolG.add(floor);
   for (const [x, z, ry, w] of [[0, -PL / 2, 0, PW], [0, PL / 2, Math.PI, PW], [-PW / 2, 0, Math.PI / 2, PL], [PW / 2, 0, -Math.PI / 2, PL]]) {
-    const m = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(w, PD), w / 2, PD / 2), tileM); m.position.set(x, -PD / 2, z); m.rotation.y = ry; m.receiveShadow = true; s.add(m); }
+    const m = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(w, PD), w / 2, PD / 2), tileM); m.position.set(x, -PD / 2, z); m.rotation.y = ry; m.receiveShadow = true; poolG.add(m); }
   const causticMat = new THREE.ShaderMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, uniforms: { uT: { value: 0 } },
     vertexShader: `varying vec2 vP; void main(){ vP = (modelMatrix * vec4(position,1.)).xz; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.); }`,
     fragmentShader: `uniform float uT; varying vec2 vP;
@@ -472,12 +513,14 @@ SCENES.pool = await (async () => {
   // fire wall
   const fm = flameMats(5); const fires = [];
   for (let i = 0; i < 26; i++) { const f = flame(fm, 6 + r() * 6); f.position.set(-36 + i * 2.9 + (r() - .5) * 2, -0.1, -PL / 2 - 14 - r() * 6); s.add(f); fires.push([f, f.scale.x, r() * 6]); }
-  s.add(roseField(320, r, [-20, 20, -30, 26], (x, z) => Math.abs(x) < PW / 2 + 0.6 && Math.abs(z) < PL / 2 + 0.6, 0.45));
+  const deckR = roseField(320, r, [-20, 20, -30, 26], (x, z) => Math.abs(x) < PW / 2 + 0.6 && Math.abs(z) < PL / 2 + 0.6, 0.45); s.add(deckR);
+  const poolR = growRoses(poolG, 180, 404, [1.2, 2.0]);
+  const headR = growRoses(doll.group, 40, 405, [0.55, 0.9], (p) => p.z > 0.2 && p.y > -0.75 && p.y < 0.75);
   const T = titleStage(sk);
   const fav = wordArt('FAVDOTCOM', 0.36, { env: sk }); fav.position.set(0, 2.0, 0); T.s.add(fav);
   const rm = wordArt('4RM', 0.5, { env: sk, color: 0xd8d8e8, side: 0x300010 }); rm.position.set(0, 1.35, 0); T.s.add(rm);
   const border = roseBorder(T);
-  const ov = ovCanvas(g => { redText(g, JP, W / 2, H - 300, 56, 'center'); redText(g, RM, W / 2, H - 230, 56, 'center'); });
+  const ov = ovCanvas(g => { redText(g, JP, 360, 1280 - 300, 56, 'center'); redText(g, RM, 360, 1280 - 230, 56, 'center'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const out = sec.out ?? 11.8, dur = sec.dur;
@@ -501,6 +544,7 @@ SCENES.pool = await (async () => {
       cam.position.set(lerp(0.01, 0, p), lerp(26, 3.0, p), lerp(0.5, 12.5, p));
       cam.lookAt(0, lerp(-3, 2.6, p), lerp(0, -1.5, p));
       border.visible = lt > 7;
+      growUpdate(deckR, lt, -0.6, 6); growUpdate(poolR, lt, 0.5, 8); growUpdate(headR, lt, 3, 7);
       fav.rotation.y = Math.sin(lt * 0.5) * 0.25; rm.rotation.y = -Math.sin(lt * 0.5) * 0.3;
       return { title: smooth(7, 8.2, lt), ov: smooth(8, 9, lt), fade: smooth(dur - 0.5, dur, lt) };
     } };
@@ -519,6 +563,7 @@ const mixMat = new THREE.ShaderMaterial({
     vec4 ova = texture2D(oA, vUv), ovb = texture2D(oB, vUv);
     a = mix(a, ova.rgb, ova.a * uOA); b = mix(b, ovb.rgb, ovb.a * uOB);
     vec3 c = mix(a, b, uMix);
+    float l = dot(c, vec3(.299, .587, .114)); c = clamp(mix(vec3(l), c, 1.3) * 1.04, 0., 1.);
     gl_FragColor = vec4(c * (1. - uFade), 1.);
   }`,
 });
