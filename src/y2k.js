@@ -5,6 +5,7 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const params = new URLSearchParams(location.search);
 const W = +(params.get('w') || 405), H = +(params.get('h') || 720);
@@ -276,43 +277,41 @@ async function mouthDecal(map, w, h) {
   { const mp = mesh.geometry.attributes.position; for (let i = 0; i < mp.count; i++) mp.setZ(i, -0.7 * mp.getX(i) ** 2 - 0.4 * mp.getY(i) ** 2); }
   return mesh;
 }
-// the pool head: pale cracked porcelain skin, empty black sockets with burning pupils, blood tears, a stretched real mouth
+// REAL head scan (Lee Perry-Smith, Infinite Realities, CC BY 3.0) with dead pale skin, empty black eyes, blood tears
+const gltfLoader = new GLTFLoader();
+const LEE = (await gltfLoader.loadAsync('./assets_dc/models/LeePerrySmith.glb')).scene.getObjectByName('LeePerrySmith').geometry;
+const BUST = (await gltfLoader.loadAsync('./assets_dc/models/marble_bust_01_1k.gltf')).scene;
 async function dollHead(env) {
   const g = new THREE.Group();
-  const pale = new THREE.MeshPhongMaterial({ map: await tex('face_pale.jpg', 1.5), color: 0xf2eee8, specular: 0x999999, shininess: 45, envMap: env, reflectivity: 0.12, combine: THREE.MixOperation });
-  const head = new THREE.Mesh(headGeo(0.24), pale); head.castShadow = true; g.add(head);
+  const skinT = (await load('models/Map-COL-dead.jpg')).clone(); skinT.colorSpace = THREE.SRGBColorSpace; skinT.needsUpdate = true;
+  const norT = (await load('models/Infinite-Level_02_Tangent_SmoothUV.jpg')).clone(); norT.needsUpdate = true;
+  const skin = new THREE.MeshPhongMaterial({ map: skinT, normalMap: norT, normalScale: new THREE.Vector2(0.9, 0.9), specular: 0x333333, shininess: 25 });
+  const head = new THREE.Mesh(LEE, skin); head.castShadow = true;
+  const inner = new THREE.Group(); inner.scale.setScalar(0.62); inner.position.y = -0.4; inner.add(head); g.add(inner);
   const ringM = new THREE.MeshPhongMaterial({ color: 0x300004, emissive: 0xff1018, emissiveIntensity: 1, shininess: 100 });
   const voidM = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  const bloodM = new THREE.MeshPhongMaterial({ color: 0x9a0010, specular: 0xffaaaa, shininess: 120 });
+  const bloodM = new THREE.MeshPhongMaterial({ color: 0x8a000e, specular: 0xffaaaa, shininess: 120 });
   const eyes = [], tears = [];
   for (const sx of [-1, 1]) {
-    const hole = new THREE.Mesh(new THREE.SphereGeometry(0.135, 24, 16), voidM); hole.position.set(sx * 0.34, 0.2, 0.6); hole.scale.set(1.15, 0.85, 0.6); g.add(hole);
-    const e = new THREE.Group(); e.position.set(sx * 0.34, 0.2, 0.62); g.add(e);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 8), ringM); pupil.position.z = 0.07; e.add(pupil);
+    const hole = new THREE.Mesh(new THREE.SphereGeometry(0.33, 24, 16), voidM); hole.position.set(sx * 0.7, 1.68, 1.82); hole.scale.set(1.25, 0.72, 0.55); inner.add(hole);
+    const e = new THREE.Group(); e.position.set(sx * 0.7, 1.68, 1.86); inner.add(e);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 8), ringM); pupil.position.z = 0.12; e.add(pupil);
     eyes.push(e);
-    for (let k = 0; k < 2; k++) { const tg = new THREE.Group(); tg.position.set(sx * (0.3 + k * 0.08), 0.08, 0.72 - k * 0.04); g.add(tg);
-      const len = 0.5 + k * 0.25; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, len, 8), bloodM); c.position.y = -len / 2; tg.add(c);
-      const d = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), bloodM); d.position.y = -len; tg.add(d); tg.rotation.x = -0.25; tears.push(tg); }
+    for (let k = 0; k < 2; k++) { const tg = new THREE.Group(); tg.position.set(sx * (0.62 + k * 0.16), 1.45, 1.98 - k * 0.05); inner.add(tg);
+      const len = 1.4 + k * 0.8; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, len, 8), bloodM); c.position.y = -len / 2; tg.add(c);
+      const d = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), bloodM); d.position.y = -len; tg.add(d); tg.rotation.x = -0.12; tears.push(tg); }
   }
   const r = rng(8);
-  g.add(roses(14, () => { const a = -0.4 + r() * 1.6, b = 0.25 + r() * 0.6; return { v: V3(Math.cos(a) * Math.sin(b) * 1.0 - 0.2, Math.cos(b) * 1.28 + 0.05, Math.sin(a) * Math.sin(b) * 0.7), rx: (r() - .5), ry: r() * 6, rz: (r() - .5) - 0.5, r: r() }; }, ROSE_HEAD, [1.0, 1.5]));
-  const MA = await tex('mouth_a.jpg'), MB = await tex('mouth_b.jpg');
-  const mouth = await mouthDecal(MB, 0.92, 0.46); mouth.position.set(0, -0.6, 0.9); mouth.rotation.x = -0.2; g.add(mouth);
-  return { group: g, ringM, eyes, mouth, mouthM: mouth.material, MA, MB, tears };
+  inner.add(roses(16, () => { const a = r() * 6.283, b = r() * 0.8; return { v: V3(Math.cos(a) * Math.sin(b) * 2.2, 3.1 + Math.cos(b) * 0.6, Math.sin(a) * Math.sin(b) * 1.8 - 0.4), rx: (r() - .5), ry: r() * 6, rz: (r() - .5), r: r() }; }, ROSE_HEAD, [2.2, 3.2]));
+  const mouth = new THREE.Object3D(), mouthM = { map: null };
+  return { group: g, inner, ringM, eyes, mouth, mouthM, MA: null, MB: null, tears };
 }
-// the temple face: giant, pale, eyes closed... then they open
+// the temple face: a REAL scanned marble bust (Poly Haven, CC0), weeping blood
 async function giantFace() {
   const g = new THREE.Group();
-  const pale = new THREE.MeshPhongMaterial({ map: await tex('face_pale.jpg', 1.2), color: 0xe8e0dc, specular: 0x444444, shininess: 25 });
-  g.add(new THREE.Mesh(headGeo(0.16), pale));
-  if (!EYEBALL_MAT) EYEBALL_MAT = new THREE.MeshPhongMaterial({ map: await tex('eyeball.jpg'), shininess: 120, specular: 0xffffff });
-  const balls = [], lids = [];
-  for (const sx of [-1, 1]) {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(0.115, 32, 20), EYEBALL_MAT); b.position.set(sx * 0.34, 0.2, 0.6); g.add(b); balls.push(b);
-    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), pale); lid.position.set(sx * 0.34, 0.2, 0.67); lid.rotation.x = Math.PI / 2 + 0.05; lid.scale.set(1.1, 1, 0.9); g.add(lid); lids.push(lid);
-  }
-  const mouth = await mouthDecal(await tex('mouth_a.jpg'), 0.8, 0.42); mouth.position.set(0, -0.58, 0.88); mouth.rotation.x = -0.2; g.add(mouth);
-  return { group: g, balls, lids, mouth };
+  const bust = BUST.clone(true); bust.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material = o.material.clone(); o.material.color?.setHex(0xe8dcd4); } });
+  bust.scale.setScalar(2.1 / 0.5); bust.position.y = -1.3; g.add(bust);
+  return { group: g, balls: [], lids: [], mouth: new THREE.Object3D() };
 }
 
 let HAND_MAT = null;
@@ -611,8 +610,9 @@ SCENES.temple = await (async () => {
     const m = new THREE.Mesh(g, woodM); m.rotation.set((r() - .5) * 0.3, (r() - .5) * 0.3, i / 80 * Math.PI * 2 + (r() - .5) * 0.08); m.position.z = r() * 0.5; m.castShadow = true; halo.add(m); }
   // meat lumps around the face
   for (let i = 0; i < 26; i++) { const a = r() * 6.283, rr = 4.6 + r() * 2.6; const m = new THREE.Mesh(new THREE.SphereGeometry(0.6 + r() * 1.1, 16, 12), fleshM); m.position.set(Math.cos(a) * rr, 9.5 + Math.sin(a) * rr * 1.1, -20 + r() * 0.8); m.scale.set(1, 0.7 + r() * 0.6, 0.6); s.add(m); }
-  const face = await giantFace(); face.group.scale.setScalar(4.3); face.group.position.set(0, 9.5, -19.6); s.add(face.group);
-  const faceR = growRoses(face.group, 50, 603, [0.35, 0.6], (p) => p.z > 0.15 && p.y > -1.0 && p.y < 0.75);
+  if (!EYEBALL_MAT) EYEBALL_MAT = new THREE.MeshPhongMaterial({ map: await tex('eyeball.jpg'), shininess: 120, specular: 0xffffff });
+  const face = await giantFace(); face.group.scale.setScalar(7.5); face.group.position.set(0, 5.6, -19.2); s.add(face.group);
+  const faceR = growRoses(face.group, 60, 603, [0.3, 0.5], (p) => p.z > 0.25 && p.y > -0.5);
   // floating eyeballs on veins
   const bloodM = new THREE.MeshPhongMaterial({ color: 0x8a0010, specular: 0xff8888, shininess: 110 });
   const floaters = [[-4.6, 5.2, -12.5, 0.95], [4.6, 5.6, -12.5, 0.95], [0, 4.2, -13.8, 1.15]].map(([x, y, z, rad], i) => {
@@ -684,13 +684,13 @@ SCENES.pool = await (async () => {
   const petals = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 6), new THREE.MeshPhongMaterial({ map: VELVET, shininess: 60, specular: 0x884444 }), 160);
   const pd = []; for (let i = 0; i < 160; i++) pd.push({ x: (r() - .5) * (PW - 1), z: (r() - .5) * (PL - 1), a: r() * 6, s: 0.08 + r() * 0.1 }); s.add(petals);
   // doll head
-  const doll = await dollHead(sk); doll.group.scale.setScalar(2.2); s.add(doll.group);
+  const doll = await dollHead(sk); doll.group.scale.setScalar(1.0); s.add(doll.group);
   // fire wall
   const fm = flameMats(5); const fires = [];
   for (let i = 0; i < 26; i++) { const f = flame(fm, 6 + r() * 6); f.position.set(-36 + i * 2.9 + (r() - .5) * 2, -0.1, -PL / 2 - 14 - r() * 6); s.add(f); fires.push([f, f.scale.x, r() * 6]); }
   const deckR = roseField(320, r, [-20, 20, -30, 26], (x, z) => Math.abs(x) < PW / 2 + 0.6 && Math.abs(z) < PL / 2 + 0.6, 0.45); s.add(deckR);
   const poolR = growRoses(poolG, 180, 404, [1.2, 2.0]);
-  const headR = growRoses(doll.group, 40, 405, [0.55, 0.9], (p) => p.z > 0.2 && p.y > -0.75 && p.y < 0.75);
+  const headR = growRoses(doll.group, 45, 405, [1.1, 1.7], (p) => (p.z > 0.6 && p.y > -1.6 && p.y < 1.5) || p.y < -1.9);
   const T = titleStage(sk);
   const fav = wordArt('Favdotcom', 0.4, { env: sk }); fav.position.set(0, 2.0, 0); T.s.add(fav);
   const rm = wordArt('4RM', 0.5, { env: sk, color: 0xd8d8e8, side: 0x300010 }); rm.position.set(0, 1.35, 0); T.s.add(rm);

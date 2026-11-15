@@ -4,3 +4,5 @@ eye_photo.jpg: composed from "Brown eye clipart illustration" (rawpixel, CC0) ir
 skin.jpg / skin_grey.jpg: tiled from the same CC0 smile photo. eyeball.jpg: iris from the rawpixel CC0 eye.
 roof_tiles, velvet, bark, wood, metal, plaster, pool_tiles, tree_photo (leaves+bark), facade/leopard/clockface (on concrete/plaster): Poly Haven CC0 textures, processed.
 flesh.jpg / face_pale.jpg: derived from skin.jpg and Poly Haven cracked_concrete (CC0).
+models/LeePerrySmith.glb + Map-COL.jpg + Infinite-Level_02_Tangent_SmoothUV.jpg: "Lee Perry-Smith" head scan by Infinite Realities, CC BY 3.0 (from the three.js examples). ATTRIBUTION REQUIRED when publishing.
+models/marble_bust_01*: Poly Haven, CC0.
