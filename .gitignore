@@ -1,3 +1,4 @@
 audio/*.wav
 node_modules/
 renders/*.mp4
+dist_itch/
