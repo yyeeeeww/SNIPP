@@ -355,7 +355,8 @@ SCENES.kingdom = await (async () => {
   const castleR = growRoses(castle, 560, 101, [2.6, 4.4]);
   const sideR = roses(140, () => ({ v: V3((r() < .5 ? -1 : 1) * (3.9 + r() * 2.5), 0.35 + r() * 0.15, 6 - r() * 16), ry: r() * 6, rx: (r() - .5) * .5, rz: (r() - .5) * .5, r: r() }), ROSE_GEO, [1.1, 1.9]); s.add(sideR);
   // title
-  const T = titleStage(sk); const fav = wordArt('FAVDOTCOM', 0.36, { env: sk }); fav.position.set(0, 1.95, 0); T.s.add(fav);
+  const T = titleStage(sk); const fav = new THREE.Group(); T.s.add(fav);
+  ['F A V', 'D O T', 'C O M'].forEach((w, i) => { const m = wordArt(w, 0.46, { env: sk, maxW: 1.9 }); m.position.y = 1.95 - i * 0.62; fav.add(m); });
   const border = roseBorder(T);
   return { s, cam, T,
     update(lt, D, sec, t, e, k) {
@@ -414,7 +415,7 @@ SCENES.eyehouse = await (async () => {
   const slabR = roses(220, () => { let x = (r() - .5) * 8.4, z = (r() - .5) * 8.4; if (Math.abs(x) < 2.1 && Math.abs(z) < 2.1) x = Math.sign(x || 1) * (2.2 + r() * 2); return { v: V3(x, 0.62 + r() * 0.08, z), ry: r() * 6, rx: (r() - .5) * .4, rz: (r() - .5) * .4, r: r() }; }, ROSE_GEO, [1.0, 1.6]); s.add(slabR);
   const houseR = growRoses(house, 140, 202, [0.9, 1.5], (p) => p.y > 2.35 || (p.z > 1.55 && Math.abs(p.x) < 1.2 && p.y > 0.5 && p.y < 2.0)), wallR = growRoses(wall, 120, 203, [1.0, 1.7]);
   const T = titleStage(sk);
-  const ov = ovCanvas(g => { redText(g, JP, 34, 40, 64); redText(g, RM, 720 - 34, 1280 - 150, 96, 'right'); });
+  const ov = ovCanvas(g => { redText(g, 'favfavfav', 34, 40, 78); redText(g, 'fav', 720 - 34, 1280 - 180, 120, 'right'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const p = clamp(lt / (sec.dur + XF));
@@ -470,8 +471,8 @@ SCENES.clocktown = await (async () => {
   const fieldR = roseField(260, r, [-6, 8, -9, 7], null); s.add(fieldR);
   const townR = growRoses(town, 700, 303, [2.0, 3.4]);
   hands.forEach((o, i) => { o.h.position.y = 0; o.roses = growRoses(o.h, 10, 310 + i, [0.8, 1.3]); o.h.position.y = -3.4; });
-  const T = titleStage(STARS); const rm = wordArt('4RM', 0.9, { env: STARS, color: 0xd0d4e0, side: 0x200008, reflect: 0.3 }); rm.position.set(0, 1.7, 0); T.s.add(rm);
-  const ov = ovCanvas(g => { redText(g, JP, 360, 1280 - 140, 58, 'center'); });
+  const T = titleStage(STARS); const rm = wordArt('fav', 1.0, { env: STARS, color: 0xd0d4e0, side: 0x200008, reflect: 0.3 }); rm.position.set(0, 1.7, 0); T.s.add(rm);
+  const ov = ovCanvas(g => { redText(g, 'favcom', 360, 330, 72, 'center'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const p = clamp(lt / (sec.dur + XF));
@@ -529,10 +530,10 @@ SCENES.pool = await (async () => {
   const poolR = growRoses(poolG, 180, 404, [1.2, 2.0]);
   const headR = growRoses(doll.group, 40, 405, [0.55, 0.9], (p) => p.z > 0.2 && p.y > -0.75 && p.y < 0.75);
   const T = titleStage(sk);
-  const fav = wordArt('FAVDOTCOM', 0.36, { env: sk }); fav.position.set(0, 2.0, 0); T.s.add(fav);
+  const fav = wordArt('Favdotcom', 0.4, { env: sk }); fav.position.set(0, 2.0, 0); T.s.add(fav);
   const rm = wordArt('4RM', 0.5, { env: sk, color: 0xd8d8e8, side: 0x300010 }); rm.position.set(0, 1.35, 0); T.s.add(rm);
   const border = roseBorder(T);
-  const ov = ovCanvas(g => { redText(g, JP, 360, 1280 - 300, 56, 'center'); redText(g, RM, 360, 1280 - 230, 56, 'center'); });
+  const ov = ovCanvas(g => { redText(g, JP, 360, 1280 - 290, 56, 'center'); });
   return { s, cam, T, ov,
     update(lt, D, sec, t, e, k) {
       const out = sec.out ?? 11.8, dur = sec.dur;
