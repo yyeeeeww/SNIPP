@@ -13,8 +13,8 @@ const XF = 0.8;
 
 // ---------------- timeline ----------------
 let TL = { fps: 30, sections: [
-  { scene: 'kingdom', dur: 15, drop: 1.75 }, { scene: 'eyehouse', dur: 15, drop: 1.78 },
-  { scene: 'clocktown', dur: 15, drop: 2.4 }, { scene: 'pool', dur: 15.3, drop: 0, out: 11.8 }],
+  { scene: 'kingdom', dur: 15, drop: 1.75 }, { scene: 'eyehouse', dur: 8.4, drop: 1.78 }, { scene: 'bridge', dur: 6.6, drop: 0 },
+  { scene: 'clocktown', dur: 8, drop: 2.4 }, { scene: 'temple', dur: 7, drop: 0 }, { scene: 'pool', dur: 15.3, drop: 0, out: 11.8 }],
   env: null, bass: null, kicks: [], audio: null };
 try { const r = await fetch('./timeline_y2k.json', { cache: 'no-store' }); if (r.ok) TL = { ...TL, ...(await r.json()) }; } catch (e) {}
 const TOTAL = TL.sections.reduce((a, s) => a + s.dur, 0);
@@ -255,42 +255,64 @@ function ovCanvas(draw) { const c = document.createElement('canvas'); c.width = 
 const JP = 'ファブドットコム', RM = '４ＲＭ';
 function redText(g, str, x, y, px, align = 'left') { const k = W / 720; x *= k; y *= k; px = Math.round(px * k); g.font = `bold ${px}px "WenQuanYi Zen Hei", sans-serif`; g.textAlign = align; g.textBaseline = 'top'; g.fillStyle = '#ff1414'; g.fillText(str, x, y); }
 
-async function dollHead(env) {
-  const g = new THREE.Group();
+function headGeo(sock = 0.2) {
   const geo = new THREE.SphereGeometry(1, 96, 72); const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     if (z > 0) { z *= 0.86;
       z += 0.24 * Math.exp(-(x * x / 0.008 + (y + 0.02) ** 2 / 0.05)) * (y < 0.15 ? 1 : 0.6);
-      for (const sx of [-1, 1]) z -= 0.13 * Math.exp(-((x - sx * 0.34) ** 2 + (y - 0.16) ** 2) / 0.016);
-      z += 0.05 * Math.exp(-(x * x / 0.12 + (y - 0.3) ** 2 / 0.004));
-      z -= 0.035 * Math.exp(-(x * x / 0.025 + (y + 0.4) ** 2 / 0.0012));
-      z += 0.03 * Math.exp(-(x * x / 0.02 + (y + 0.46) ** 2 / 0.002)); }
-    x *= 1 - 0.22 * Math.max(0, -y); y *= 1.22;
+      for (const sx of [-1, 1]) { z -= sock * Math.exp(-((x - sx * 0.34) ** 2 + (y - 0.16) ** 2) / 0.018); z -= 0.07 * Math.exp(-((x - sx * 0.45) ** 2 / 0.02 + (y + 0.18) ** 2 / 0.03)); }
+      z += 0.06 * Math.exp(-(x * x / 0.12 + (y - 0.32) ** 2 / 0.004));
+      z -= 0.035 * Math.exp(-(x * x / 0.025 + (y + 0.4) ** 2 / 0.0012)); }
+    x *= 1 - 0.25 * Math.max(0, -y); y *= 1.28;
     p.setXYZ(i, x, y, z);
   }
-  geo.computeVertexNormals();
-  const chrome = new THREE.MeshPhongMaterial({ map: await tex('plaster.jpg', 2), color: 0xd8d8e0, specular: 0xffffff, shininess: 90, envMap: env, reflectivity: 0.5, combine: THREE.MixOperation });
-  const head = new THREE.Mesh(geo, chrome); head.castShadow = true; g.add(head);
-  const ringM = new THREE.MeshPhongMaterial({ color: 0x600008, emissive: 0xff1018, emissiveIntensity: 1, shininess: 100 });
-  const eyes = [];
-  if (!EYEBALL_MAT) EYEBALL_MAT = new THREE.MeshPhongMaterial({ map: await tex('eyeball.jpg'), shininess: 120, specular: 0xffffff });
+  geo.computeVertexNormals(); return geo;
+}
+async function mouthDecal(map, w, h) {
+  const mask = canvasTex(256, 128, (c, W_, H_) => { const gr = c.createRadialGradient(W_ / 2, H_ / 2, 10, W_ / 2, H_ / 2, W_ / 2); gr.addColorStop(0, '#fff'); gr.addColorStop(.6, '#fff'); gr.addColorStop(1, '#000'); c.fillStyle = '#000'; c.fillRect(0, 0, W_, H_); c.save(); c.scale(1, H_ / W_); c.fillStyle = gr; c.fillRect(0, 0, W_, W_); c.restore(); }, false);
+  const m = new THREE.MeshPhongMaterial({ map, alphaMap: mask, transparent: true, depthWrite: false, shininess: 40, polygonOffset: true, polygonOffsetFactor: -4 });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 8, 4), m);
+  { const mp = mesh.geometry.attributes.position; for (let i = 0; i < mp.count; i++) mp.setZ(i, -0.7 * mp.getX(i) ** 2 - 0.4 * mp.getY(i) ** 2); }
+  return mesh;
+}
+// the pool head: pale cracked porcelain skin, empty black sockets with burning pupils, blood tears, a stretched real mouth
+async function dollHead(env) {
+  const g = new THREE.Group();
+  const pale = new THREE.MeshPhongMaterial({ map: await tex('face_pale.jpg', 1.5), color: 0xf2eee8, specular: 0x999999, shininess: 45, envMap: env, reflectivity: 0.12, combine: THREE.MixOperation });
+  const head = new THREE.Mesh(headGeo(0.24), pale); head.castShadow = true; g.add(head);
+  const ringM = new THREE.MeshPhongMaterial({ color: 0x300004, emissive: 0xff1018, emissiveIntensity: 1, shininess: 100 });
+  const voidM = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const bloodM = new THREE.MeshPhongMaterial({ color: 0x9a0010, specular: 0xffaaaa, shininess: 120 });
+  const eyes = [], tears = [];
   for (const sx of [-1, 1]) {
-    const e = new THREE.Group(); e.position.set(sx * 0.34, 0.19, 0.72); g.add(e);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.045, 12, 32), ringM); e.add(ring);
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.088, 32, 20), EYEBALL_MAT); ball.position.z = -0.01; e.add(ball);
-    eyes.push(ball);
+    const hole = new THREE.Mesh(new THREE.SphereGeometry(0.135, 24, 16), voidM); hole.position.set(sx * 0.34, 0.2, 0.6); hole.scale.set(1.15, 0.85, 0.6); g.add(hole);
+    const e = new THREE.Group(); e.position.set(sx * 0.34, 0.2, 0.62); g.add(e);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 8), ringM); pupil.position.z = 0.07; e.add(pupil);
+    eyes.push(e);
+    for (let k = 0; k < 2; k++) { const tg = new THREE.Group(); tg.position.set(sx * (0.3 + k * 0.08), 0.08, 0.72 - k * 0.04); g.add(tg);
+      const len = 0.5 + k * 0.25; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, len, 8), bloodM); c.position.y = -len / 2; tg.add(c);
+      const d = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), bloodM); d.position.y = -len; tg.add(d); tg.rotation.x = -0.25; tears.push(tg); }
   }
   const r = rng(8);
-  g.add(roses(14, () => { const a = -0.4 + r() * 1.6, b = 0.25 + r() * 0.6; return { v: V3(Math.cos(a) * Math.sin(b) * 1.0 - 0.2, Math.cos(b) * 1.22 + 0.05, Math.sin(a) * Math.sin(b) * 0.7), rx: (r() - .5), ry: r() * 6, rz: (r() - .5) - 0.5, r: r() }; }, ROSE_HEAD, [1.0, 1.5]));
-  // a real mouth, grafted onto the chrome
+  g.add(roses(14, () => { const a = -0.4 + r() * 1.6, b = 0.25 + r() * 0.6; return { v: V3(Math.cos(a) * Math.sin(b) * 1.0 - 0.2, Math.cos(b) * 1.28 + 0.05, Math.sin(a) * Math.sin(b) * 0.7), rx: (r() - .5), ry: r() * 6, rz: (r() - .5) - 0.5, r: r() }; }, ROSE_HEAD, [1.0, 1.5]));
   const MA = await tex('mouth_a.jpg'), MB = await tex('mouth_b.jpg');
-  const mask = canvasTex(256, 128, (c, w, h) => { const gr = c.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w / 2); gr.addColorStop(0, '#fff'); gr.addColorStop(.6, '#fff'); gr.addColorStop(1, '#000'); c.fillStyle = '#000'; c.fillRect(0, 0, w, h); c.save(); c.scale(1, h / w); c.fillStyle = gr; c.fillRect(0, 0, w, w); c.restore(); }, false);
-  const mouthM = new THREE.MeshPhongMaterial({ map: MA, alphaMap: mask, transparent: true, depthWrite: false, shininess: 40, polygonOffset: true, polygonOffsetFactor: -4 });
-  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.36, 8, 4), mouthM);
-  { const mp = mouth.geometry.attributes.position; for (let i = 0; i < mp.count; i++) mp.setZ(i, -0.75 * mp.getX(i) ** 2 - 0.4 * mp.getY(i) ** 2); }
-  mouth.position.set(0, -0.52, 0.9); mouth.rotation.x = -0.18; g.add(mouth);
-  return { group: g, ringM, eyes, mouth, mouthM, MA, MB };
+  const mouth = await mouthDecal(MB, 0.92, 0.46); mouth.position.set(0, -0.6, 0.9); mouth.rotation.x = -0.2; g.add(mouth);
+  return { group: g, ringM, eyes, mouth, mouthM: mouth.material, MA, MB, tears };
+}
+// the temple face: giant, pale, eyes closed... then they open
+async function giantFace() {
+  const g = new THREE.Group();
+  const pale = new THREE.MeshPhongMaterial({ map: await tex('face_pale.jpg', 1.2), color: 0xe8e0dc, specular: 0x444444, shininess: 25 });
+  g.add(new THREE.Mesh(headGeo(0.16), pale));
+  if (!EYEBALL_MAT) EYEBALL_MAT = new THREE.MeshPhongMaterial({ map: await tex('eyeball.jpg'), shininess: 120, specular: 0xffffff });
+  const balls = [], lids = [];
+  for (const sx of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.115, 32, 20), EYEBALL_MAT); b.position.set(sx * 0.34, 0.2, 0.6); g.add(b); balls.push(b);
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), pale); lid.position.set(sx * 0.34, 0.2, 0.67); lid.rotation.x = Math.PI / 2 + 0.05; lid.scale.set(1.1, 1, 0.9); g.add(lid); lids.push(lid);
+  }
+  const mouth = await mouthDecal(await tex('mouth_a.jpg'), 0.8, 0.42); mouth.position.set(0, -0.58, 0.88); mouth.rotation.x = -0.2; g.add(mouth);
+  return { group: g, balls, lids, mouth };
 }
 
 let HAND_MAT = null;
@@ -480,12 +502,152 @@ SCENES.clocktown = await (async () => {
       cam.lookAt(lerp(1, -1, p), lerp(1.8, 12.5, smooth(0.35, 1, p)), -20);
       const sp = t * 0.6 + Math.max(0, lt - D) * 2.5;
       handsCl.forEach(([hh, mh]) => { hh.rotation.z = -sp * 0.4; mh.rotation.z = -sp * 4; });
-      hands.forEach((o, i) => { const st = D + 0.25 + i * 0.42; const up = ease(smooth(st, st + 1.3, lt));
+      hands.forEach((o, i) => { const st = D + 0.25 + i * 0.3; const up = ease(smooth(st, st + 1.3, lt));
         o.h.position.y = lerp(-3.4, -0.2, up); o.h.rotation.z = Math.sin(t * 0.8 + o.ph) * 0.06 * up; growUpdate(o.roses, lt, st + 0.7, 1.6); });
       growUpdate(fieldR, lt, -0.6, 6); growUpdate(townR, lt, D, 10);
       lamp.intensity = 50 + envSmooth(t) * 40;
       rm.rotation.y = Math.sin(lt * 0.6) * 0.35;
       return { title: smooth(D + 0.5, D + 1.7, lt), ov: smooth(D + 1, D + 2, lt) };
+    } };
+})();
+
+// 2b) BRIDGE — night canal, deep navy sky, a red lacquered bridge; a ghost with long black hair stands in a boat
+SCENES.bridge = await (async () => {
+  const s = new THREE.Scene(), cam = new THREE.PerspectiveCamera(50, W / H, 0.1, 2000), r = rng(55);
+  const NAVY = canvasTex(1024, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#04062e'); gr.addColorStop(.45, '#121a6a'); gr.addColorStop(.52, '#1a2276'); gr.addColorStop(1, '#020310'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  NAVY.mapping = THREE.EquirectangularReflectionMapping; s.background = NAVY; s.fog = new THREE.Fog(0x141c68, 16, 70);
+  s.add(new THREE.HemisphereLight(0x7080e0, 0x202010, 1.1));
+  shadowSun(s, 0xb0b8ff, 1.4, V3(-20, 30, 15), 30);
+  const lantern = new THREE.PointLight(0xff4020, 30, 16); lantern.position.set(3, 2.6, -12); s.add(lantern);
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(60, 120), new THREE.MeshPhongMaterial({ map: await tex('grass_ground_green.jpg', 20), color: 0xd8d070, shininess: 2 }));
+  grass.rotation.x = -Math.PI / 2; grass.position.set(-30.8, 0, -30); grass.receiveShadow = true; s.add(grass);
+  const far = new THREE.Mesh(new THREE.PlaneGeometry(60, 120), new THREE.MeshPhongMaterial({ map: await tex('dirt.jpg', 20), color: 0x505060 }));
+  far.rotation.x = -Math.PI / 2; far.position.set(37.3, 0, -30); s.add(far);
+  const walls = new THREE.Group(); s.add(walls);
+  const wallM = new THREE.MeshPhongMaterial({ map: await tex('rock_grey.jpg', 1), color: 0x9098a8, shininess: 6 });
+  for (const x of [-0.4, 6.9]) { const w = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(0.8, 1.6, 120), 60, 1), wallM); w.position.set(x, -0.75, -30); w.castShadow = w.receiveShadow = true; walls.add(w); }
+  for (let i = 0; i < 9; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.8), wallM); st.position.set(0.5, -0.85, 2 - i * 1.4); st.rotation.y = (r() - .5) * 0.3; walls.add(st); }
+  const waterMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+    fragmentShader: `uniform float uT; varying vec2 vUv; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main(){ vec2 c = floor(vUv * vec2(160., 2400.)); float sp = step(.9, h(c + floor(uT * 6.))); float w = .5 + .5 * sin(vUv.y * 900. + uT * 2. + vUv.x * 20.);
+        vec3 col = vec3(.10, .13, .42) * (.8 + .2 * w) + vec3(.45, .5, .95) * sp * .55; gl_FragColor = vec4(pow(col, vec3(2.2)), 1.); }` });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 120), waterMat); water.rotation.x = -Math.PI / 2; water.position.set(3.25, -1.1, -30); s.add(water);
+  // the red bridge
+  const lacquer = new THREE.MeshPhongMaterial({ map: await tex('wood.jpg', 1), color: 0xff2020, shininess: 70, specular: 0x664444 });
+  const bridge = new THREE.Group(); bridge.position.z = -14; s.add(bridge);
+  const N = 16, bx = (u) => lerp(-1.2, 7.7, u), by = (u) => 0.12 + 1.35 * (1 - (2 * u - 1) ** 2);
+  for (let i = 0; i < N; i++) { const u0 = i / N, u1 = (i + 1) / N; const dx = bx(u1) - bx(u0), dy = by(u1) - by(u0);
+    const d = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(dx, dy) + 0.02, 0.18, 2.4), lacquer); d.position.set((bx(u0) + bx(u1)) / 2, (by(u0) + by(u1)) / 2, 0); d.rotation.z = Math.atan2(dy, dx); d.castShadow = true; bridge.add(d); }
+  for (const zs of [-1.15, 1.15]) for (let i = 0; i <= N; i += 2) { const u = i / N;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.13, 1.0, 0.13), lacquer); post.position.set(bx(u), by(u) + 0.5, zs); post.castShadow = true; bridge.add(post);
+    if (i < N) { const u2 = (i + 2) / N; for (const hgt of [0.95, 0.5]) { const dx = bx(u2) - bx(u), dy = by(u2) - by(u);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(dx, dy), 0.09, 0.11), lacquer); rail.position.set((bx(u) + bx(u2)) / 2, (by(u) + by(u2)) / 2 + hgt, zs); rail.rotation.z = Math.atan2(dy, dx); bridge.add(rail); } } }
+  // boat + ghost
+  const woodM = new THREE.MeshPhongMaterial({ map: await tex('wood.jpg', 1), color: 0x6a5040, shininess: 10 });
+  const boat = new THREE.Group(); boat.position.set(4.7, -1.0, -7.5); boat.rotation.y = 0.15; s.add(boat);
+  boat.add(new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.35, 4.0), woodM));
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.2, 4), woodM); bow.rotation.set(Math.PI / 2, Math.PI / 4, 0); bow.scale.set(1, 1, 0.35); bow.position.z = -2.5; boat.add(bow);
+  const ghostM = new THREE.MeshPhongMaterial({ map: await tex('plaster.jpg', 1), color: 0xf0f0f4, shininess: 10 });
+  const hairM = new THREE.MeshPhongMaterial({ color: 0x050505, specular: 0x666688, shininess: 90 });
+  const ghost = new THREE.Group(); ghost.position.set(0, 0.17, 0.8); boat.add(ghost);
+  const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.38, 1.55, 16), ghostM); robe.position.y = 0.78; ghost.add(robe);
+  for (const sx of [-1, 1]) { const a = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.8, 8), ghostM); a.position.set(sx * 0.22, 1.12, 0.05); a.rotation.z = sx * 0.12; ghost.add(a); }
+  const headG = new THREE.Group(); headG.position.y = 1.72; ghost.add(headG);
+  headG.add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), ghostM));
+  const hair = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.26, 1.15, 18, 1, true), hairM); hair.position.y = -0.38; hair.material.side = THREE.DoubleSide; headG.add(hair);
+  const hairTop = new THREE.Mesh(new THREE.SphereGeometry(0.175, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), hairM); headG.add(hairTop);
+  ghost.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  // background: a dark pagoda and a black tree line
+  const darkM = new THREE.MeshPhongMaterial({ map: await tex('wood.jpg', 1), color: 0x302830 }), roofM = new THREE.MeshPhongMaterial({ map: await tex('metal.jpg', 1), color: 0x404050, shininess: 30 });
+  const pag = new THREE.Group(); pag.position.set(-13, 0, -42); s.add(pag);
+  for (let k = 0; k < 4; k++) { const sz = 4 - k * 0.8; const b = new THREE.Mesh(new THREE.BoxGeometry(sz, 1.6, sz), darkM); b.position.y = k * 2.1 + 0.8; pag.add(b);
+    const rf = new THREE.Mesh(new THREE.ConeGeometry(sz * 0.95, 0.9, 4), roofM); rf.rotation.y = Math.PI / 4; rf.position.y = k * 2.1 + 2.0; pag.add(rf); }
+  const treeT = await load('tree_photo.png'); treeT.colorSpace = THREE.SRGBColorSpace;
+  const treeM = new THREE.MeshPhongMaterial({ map: treeT, alphaTest: 0.5, side: THREE.DoubleSide, color: 0x283050 });
+  for (let i = 0; i < 16; i++) { const sc = 7 + r() * 6; const q = new THREE.Mesh(new THREE.PlaneGeometry(sc, sc), treeM); q.position.set(9 + r() * 10, sc / 2 - 0.3, -6 - i * 3.5); q.rotation.y = -0.5 - r() * 0.6; s.add(q); }
+  const fieldR = roseField(220, r, [-10, -1.2, -30, 6], null); s.add(fieldR);
+  const wallR = growRoses(walls, 300, 501, [0.9, 1.5]), bridgeR = growRoses(bridge, 130, 502, [0.8, 1.3]);
+  const T = titleStage(NAVY);
+  const ov = ovCanvas(g => { redText(g, JP, 22, 30, 72); redText(g, RM, 720 - 22, 1280 - 175, 124, 'right'); });
+  return { s, cam, T, ov,
+    update(lt, D, sec, t, e, k) {
+      const p = clamp(lt / (sec.dur + XF));
+      cam.position.set(lerp(0.9, 2.0, p), lerp(1.5, 1.1, p), lerp(6, -1.5, ease(p)));
+      cam.lookAt(lerp(3.4, 4.6, p), 0.6, -14);
+      waterMat.uniforms.uT.value = t;
+      boat.position.y = -1.0 + Math.sin(t * 1.2) * 0.04; boat.rotation.z = Math.sin(t * 0.9) * 0.03;
+      headG.rotation.y = lerp(-2.4, 0.1, ease(smooth(1.5, sec.dur, lt))); headG.rotation.z = Math.sin(t * 0.6) * 0.08;
+      lantern.intensity = 24 + Math.sin(t * 11) * 4 + envSmooth(t) * 12;
+      growUpdate(fieldR, lt, -0.6, 4); growUpdate(wallR, lt, -0.2, 6); growUpdate(bridgeR, lt, 1, 5);
+      return { title: 0, ov: smooth(0.2, 1.0, lt) };
+    } };
+})();
+
+// 3b) TEMPLE — a room of flesh; a giant pale face in a halo of splinters opens its eyes; eyeballs float on bloody veins
+SCENES.temple = await (async () => {
+  const s = new THREE.Scene(), cam = new THREE.PerspectiveCamera(52, W / H, 0.1, 2000), r = rng(66);
+  s.background = new THREE.Color(0x120203); s.fog = new THREE.Fog(0x1c0405, 14, 60);
+  s.add(new THREE.HemisphereLight(0xff9080, 0x200000, 0.7));
+  const key = new THREE.PointLight(0xff8a70, 450, 60); key.position.set(0, 12, -8); s.add(key);
+  shadowSun(s, 0xffc0a0, 0.9, V3(10, 30, 20), 30);
+  const fleshM = new THREE.MeshPhongMaterial({ map: await tex('flesh.jpg', 1), color: 0x8a4a48, specular: 0x664444, shininess: 80 });
+  const grateM = new THREE.MeshPhongMaterial({ map: await tex('metal.jpg', 2), color: 0x9a9a9a, shininess: 40 });
+  const floor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(80, 80), 12, 12), fleshM); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; s.add(floor);
+  const walk = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(3, 0.25, 14), 1, 5), grateM); walk.position.set(0, 0.12, -1); walk.receiveShadow = true; s.add(walk);
+  for (let i = 0; i < 4; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 0.6), grateM); st.position.set(0, 0.1 - i * 0.0, 6.3 + i * 0.6); s.add(st); }
+  const plat = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(4.2, 4.5, 0.7, 8), 4, 1), fleshM); plat.position.set(0, 0.35, -9.5); plat.receiveShadow = true; s.add(plat);
+  const pillars = new THREE.Group(); s.add(pillars);
+  for (const [x, z] of [[-5, 1], [5, 1], [-6, -6], [6, -6], [-6.5, -13], [6.5, -13]]) {
+    const pl = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(1.3, 1.5, 3.4, 8), 3, 1.5), fleshM); pl.position.set(x, 1.7, z); pl.castShadow = pl.receiveShadow = true; pillars.add(pl);
+    for (const y of [0.8, 2.5]) { const b = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(1.48, 1.55, 0.35, 8), 4, 0.3), grateM); b.position.set(x, y, z); pillars.add(b); }
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.4, 0.4, 8), fleshM); cap.position.set(x, 3.6, z); pillars.add(cap); }
+  const back = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(50, 36, 1), 8, 6), fleshM); back.position.set(0, 16, -21.5); back.receiveShadow = true; s.add(back);
+  for (const x of [-17, 17]) { const sw = new THREE.Mesh(scaleUV(new THREE.BoxGeometry(1, 36, 44), 8, 6), fleshM); sw.position.set(x, 16, -1); s.add(sw); }
+  // halo of splinters
+  const woodM = new THREE.MeshPhongMaterial({ map: await tex('wood.jpg', 1), color: 0xd0a888, shininess: 15 });
+  const halo = new THREE.Group(); halo.position.set(0, 9.5, -20.6); s.add(halo);
+  for (let i = 0; i < 80; i++) { const len = 6 + r() * 7; const g = new THREE.BoxGeometry(len, 0.28 + r() * 0.25, 0.08); g.translate(len / 2 + 4.2, 0, 0);
+    const m = new THREE.Mesh(g, woodM); m.rotation.set((r() - .5) * 0.3, (r() - .5) * 0.3, i / 80 * Math.PI * 2 + (r() - .5) * 0.08); m.position.z = r() * 0.5; m.castShadow = true; halo.add(m); }
+  // meat lumps around the face
+  for (let i = 0; i < 26; i++) { const a = r() * 6.283, rr = 4.6 + r() * 2.6; const m = new THREE.Mesh(new THREE.SphereGeometry(0.6 + r() * 1.1, 16, 12), fleshM); m.position.set(Math.cos(a) * rr, 9.5 + Math.sin(a) * rr * 1.1, -20 + r() * 0.8); m.scale.set(1, 0.7 + r() * 0.6, 0.6); s.add(m); }
+  const face = await giantFace(); face.group.scale.setScalar(4.3); face.group.position.set(0, 9.5, -19.6); s.add(face.group);
+  const faceR = growRoses(face.group, 50, 603, [0.35, 0.6], (p) => p.z > 0.15 && p.y > -1.0 && p.y < 0.75);
+  // floating eyeballs on veins
+  const bloodM = new THREE.MeshPhongMaterial({ color: 0x8a0010, specular: 0xff8888, shininess: 110 });
+  const floaters = [[-4.6, 5.2, -12.5, 0.95], [4.6, 5.6, -12.5, 0.95], [0, 4.2, -13.8, 1.15]].map(([x, y, z, rad], i) => {
+    const g = new THREE.Group(); g.position.set(x, y, z); s.add(g);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(rad, 32, 20), EYEBALL_MAT); g.add(b);
+    for (let k = 0; k < 5; k++) { const len = 2 + r() * 3; const v = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.09, len, 6), bloodM); v.geometry.translate(0, -len / 2, 0);
+      v.position.set((r() - .5) * rad, -rad * 0.6, (r() - .5) * rad - rad * 0.3); v.rotation.set((r() - .5) * 0.5, 0, (r() - .5) * 0.5); g.add(v); }
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return { g, b, ph: i * 2.1, y };
+  });
+  // a small figure made of roses, seen from behind
+  const fig = new THREE.Group(); fig.position.set(0, 0.25, -3.6); s.add(fig);
+  const bodyM = new THREE.MeshPhongMaterial({ map: VELVET, color: 0x602020, shininess: 20 });
+  [[0, 1.25, 0, 0.26, 0.6, 0], [0, 1.95, 0, 0.19, 0.0, 0], [-0.13, 0.45, 0, 0.11, 0.6, 0.03], [0.13, 0.45, 0, 0.11, 0.6, -0.03], [-0.38, 1.3, 0, 0.08, 0.6, 0.2], [0.38, 1.3, 0, 0.08, 0.6, -0.2]].forEach(([x, y, z, rad, len, rz]) => {
+    const m = new THREE.Mesh(len ? new THREE.CapsuleGeometry(rad, len, 6, 12) : new THREE.SphereGeometry(rad, 16, 12), bodyM); m.position.set(x, y, z); m.rotation.z = rz; m.castShadow = true; fig.add(m); });
+  const figR = growRoses(fig, 150, 601, [0.45, 0.7]);
+  const pillarR = growRoses(pillars, 220, 602, [1.0, 1.6]);
+  const fieldR = roseField(220, r, [-13, 13, -17, 6], (x) => Math.abs(x) < 1.8); s.add(fieldR);
+  const T = titleStage(s.background);
+  const ov = ovCanvas(g => { redText(g, 'favfavfav', 360, 40, 80, 'center'); });
+  return { s, cam, T, ov,
+    update(lt, D, sec, t, e, k) {
+      const p = ease(clamp(lt / (sec.dur + XF)));
+      cam.position.set(Math.sin(lt * 0.25) * 0.5, lerp(2.3, 3.4, p), lerp(4.5, -1.2, p));
+      cam.lookAt(0, lerp(5.5, 8.5, p), -19);
+      cam.updateMatrixWorld();
+      const open = ease(smooth(1.6, 2.8, lt));
+      face.lids.forEach(l => { l.scale.set(1.1, 1, 0.9); l.position.y = 0.2 + open * 0.07; l.rotation.x = Math.PI / 2 + 0.05 - open * 0.55; });
+      face.group.updateMatrixWorld(true);
+      face.balls.forEach(b => b.lookAt(cam.position));
+      face.mouth.scale.set(1, 1 + smooth(4, 6.5, lt) * 0.7 + envSmooth(t) * 0.2, 1);
+      face.group.rotation.z = Math.sin(t * 0.4) * 0.04;
+      floaters.forEach(f => { f.g.position.y = f.y + Math.sin(t * 0.9 + f.ph) * 0.35; f.g.updateMatrixWorld(true); f.b.lookAt(cam.position); });
+      key.intensity = 420 + envSmooth(t) * 300;
+      growUpdate(figR, lt, -10, 1); growUpdate(pillarR, lt, -0.4, 5); growUpdate(fieldR, lt, -0.6, 4); growUpdate(faceR, lt, 3, 4);
+      return { title: 0, ov: smooth(0.3, 1.1, lt) };
     } };
 })();
 
@@ -546,11 +708,14 @@ SCENES.pool = await (async () => {
       petals.instanceMatrix.needsUpdate = true;
       const rise = ease(smooth(0.6, 6.5, lt));
       doll.group.position.set(0, lerp(-2.9, 2.0, rise) + Math.sin(t * 0.9) * 0.08, -1.5);
-      doll.group.rotation.y = Math.sin(t * 0.35) * 0.3; doll.group.rotation.z = Math.sin(t * 0.5) * 0.08; doll.group.rotation.x = -0.05 + Math.sin(t * 0.27) * 0.06;
+      // slow sway + sudden unnatural twitches of the head
+      const tw = (t % 2.3) / 2.3, twK = tw < 0.05 ? Math.sin(tw / 0.05 * Math.PI) : 0, twDir = Math.floor(t / 2.3) % 2 ? 1 : -1;
+      doll.group.rotation.y = Math.sin(t * 0.35) * 0.3; doll.group.rotation.z = Math.sin(t * 0.5) * 0.08 + twK * 0.45 * twDir + smooth(out, out + 2, lt) * 0.5; doll.group.rotation.x = -0.05 + Math.sin(t * 0.27) * 0.06;
+      doll.tears.forEach((tg, i) => tg.scale.set(1, Math.max(0.001, smooth(4 + i * 0.6, 9 + i * 0.6, lt)), 1));
       doll.group.updateMatrixWorld(true);
       const blink = 1 - 0.92 * Math.max(0, 1 - Math.abs(((t + 0.4) % 3.1) - 0.08) / 0.08);
-      doll.mouthM.map = k > 0.3 ? doll.MB : doll.MA; doll.mouth.scale.y = 1 + envSmooth(t) * 0.35;
-      doll.ringM.emissiveIntensity = 0.8 + envSmooth(t) * 1.6;
+      doll.mouthM.map = k > 0.3 ? doll.MA : doll.MB; doll.mouth.scale.set(1 + envSmooth(t) * 0.15, 1 + envSmooth(t) * 0.5 + smooth(out, out + 2, lt) * 0.6, 1);
+      doll.ringM.emissiveIntensity = 1.2 + envSmooth(t) * 2.5;
       const calm = smooth(out, out + 2, lt);
       const heat = smooth(3.5, 6, lt) * (1 - calm * 0.85);
       animateFlames(fm, t);
