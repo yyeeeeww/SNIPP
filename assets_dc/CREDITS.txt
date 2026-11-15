@@ -1,3 +1,5 @@
 All textures and sky panoramas in this folder are CC0 from Poly Haven (https://polyhaven.com), resized and color-adjusted.
 mouth_a.jpg / mouth_b.jpg: cropped from "Big Beautiful Smile 4" and "Big Beautiful Smile" (Flickr, CC0), found via Openverse.
 eye_photo.jpg: composed from "Brown eye clipart illustration" (rawpixel, CC0) iris + skin from mouth photo above.
+skin.jpg / skin_grey.jpg: tiled from the same CC0 smile photo. eyeball.jpg: iris from the rawpixel CC0 eye.
+roof_tiles, velvet, bark, wood, metal, plaster, pool_tiles, tree_photo (leaves+bark), facade/leopard/clockface (on concrete/plaster): Poly Haven CC0 textures, processed.
