@@ -19,10 +19,10 @@ const port = server.address().port;
 
 const [mode, out, ...rest] = process.argv.slice(2);
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 270, height: 480 } });
+const page = await browser.newPage({ viewport: { width: 540, height: 960 } });
 page.on('console', m => console.log('[page]', m.text()));
 page.on('pageerror', e => console.log('[pageerror]', e.message));
-await page.goto(`http://localhost:${port}/index.html?capture`);
+await page.goto(`http://localhost:${port}/${process.env.PAGE || 'index.html'}?capture`);
 await page.waitForFunction(() => window.READY, null, { timeout: 60000 });
 const grab = async (t) => {
   const url = await page.evaluate((t) => { window.renderAt(t); return document.querySelector('canvas').toDataURL('image/png'); }, t);
